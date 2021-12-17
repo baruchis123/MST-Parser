@@ -25,7 +25,10 @@ def _feature_function_POS_bigram(self, word1, word2)
 ```
 
 ### Training
-Training of our model will be done using stochastic gradient descent and the Perceptron Average algorthim (switches the need to find in every iteration the expectation of all the spanning trees and just corrects the model according to the maximum spanning tree), where in each iteration of training, we will find the MST and correct our models parameters (<img src="https://render.githubusercontent.com/render/math?math=\theta">) accordingly.
+Training of our model will be done using stochastic gradient descent and the Perceptron Average algorthim (switches the need to find in every iteration the expectation of all the spanning trees and just corrects the model according to the maximum spanning tree), where in each iteration of training, we will find the MST and correct our models parameters (<img src="https://render.githubusercontent.com/render/math?math=\theta">) accordingly - training of the algorithm will be done using the following function:
+```python
+def train(self, n_iterations: int, batch_size: int, sentences)
+```
 
 ### Testing
 After finding the best parameters through the training stage, testing will be done on the test set using the parameters found through the training process.
