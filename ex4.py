@@ -101,17 +101,18 @@ class MST_Parser:
                          self.__sum_of_edges(cur_tree, sentence))
 
     def train(self, n_iterations: int, batch_size: int, training_set):
-        weights = [np.zeros(self.__dimension_size)]
+        weights = np.zeros(self.__dimension_size)
         start = 0
         for r in range(n_iterations):
             for sent in training_set[start: start + batch_size]:
                 tagged_sent = self.__create_tagged_sent(sent)
                 maximum_spanning_tree = self.__inference(tagged_sent)
                 actual_spanning_tree = self.__create_gold_standard_tuple(sent)
-                updated_weight = self.__update_weights(weights[-1], actual_spanning_tree, maximum_spanning_tree, sent)
-                weights.append(updated_weight)
+                updated_weight = self.__update_weights(weights, actual_spanning_tree, maximum_spanning_tree, sent)
+                self.__weights += updated_weight
+                weights = updated_weight
                 start += batch_size
-        self.__weights += sum(weights) / (n_iterations * batch_size)
+        self.__weights / (n_iterations * batch_size)
 
     def predict(self, sent):
         return self.__inference(sent)
@@ -126,7 +127,7 @@ class MST_Parser:
         actual_spanning_tree = self.__create_gold_standard_tuple(sent)
         max_set = set(maximum_spanning_tree)
         intersection = max_set.intersection(set(actual_spanning_tree))
-        len_sent = len(intersection) / len(tagged_sent)
+        return len(intersection) / len(tagged_sent)
 
     def test(self,test_set):
         test_set_size = len(test_set)
