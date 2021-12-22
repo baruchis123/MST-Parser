@@ -16,10 +16,7 @@ from Chu_Liu_Edmonds_algorithm import min_spanning_arborescence_nx
 # print(POS[0: 2])
 
 
-
 def create_vocab_arr():
-    word_set = sorted(set([word for sentence in dependency_treebank.sents() for word in sentence] + ["ROOT"]))
-
     return np.array(sorted(set([word for sentence in dependency_treebank.sents() for word in sentence] + ["ROOT"])))
 
 
