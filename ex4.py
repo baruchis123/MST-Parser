@@ -62,7 +62,7 @@ class MST_Parser:
         return self.find_pair_index(first_word, second_word)
 
     def __feature_function_POS_bigram(self, word1, word2):
-        return self.__POS_dict[word1["tag"]][word2["tag"]] + len(self.__vocab)
+        return self.__POS_dict[word1["ctag"]][word2["ctag"]] + len(self.__vocab)
 
     def __feature_function(self, word1, word2):
         return self.Ferature_repr(self.__feature_function_word_bigram(word1, word2), self.__feature_function_POS_bigram(word1, word2))
@@ -86,7 +86,7 @@ class MST_Parser:
 
     def __get_gold_standard_tree(self, sent):
         words = list(sent.nodes.values())
-        list1 = [self.__create_arc((sent.nodes[word["head"]]["word"] if sent.nodes[word["head"]]["word"] is not None else "ROOT", sent.nodes[word["head"]]["tag"]), (word["word"], word["tag"]), word["head"], word["address"]) for word in words if word["head"] is not None]
+        list1 = [self.__create_arc((sent.nodes[word["head"]]["word"] if sent.nodes[word["head"]]["word"] is not None else "ROOT", sent.nodes[word["head"]]["ctag"]), (word["word"], word["ctag"]), word["head"], word["address"]) for word in words if word["head"] is not None]
         return list1
 
     def __sum_of_edges(self, tree, sentence):
@@ -147,7 +147,7 @@ class MST_Parser:
         return self.__inference(sent)
 
     def __create_tagged_sent(self, sent):
-        return [(word["word"] if word["word"] is not None else "ROOT", word["tag"]) for word in sent.nodes.values()]
+        return [(word["word"] if word["word"] is not None else "ROOT", word["ctag"]) for word in sent.nodes.values()]
 
 
     def eval(self, sent):
