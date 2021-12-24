@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 from collections import namedtuple
 from nltk.corpus import dependency_treebank
@@ -27,11 +29,12 @@ def create_POS_arr():
 class MST_Parser:
     def __init__(self, learning_rate: int):
         self.ARC = namedtuple('ARC', ['head', 'tail', 'weight'])
+        self.Ferature_repr = namedtuple('Feature_repr', ['bigram_ind', 'POS_ind'])
         self.__learning_rate = learning_rate
         self.__vocab = create_vocab_arr()
         self.__POS = create_POS_arr()
         self.__dimension_size = len(self.__vocab) ** 2 + len(self.__POS) ** 2
-        self.__weights = np.zeros(self.__dimension_size)
+        self.__weights = dict()
         self.bigram_word_index_dict = {}
         i = 0
         for word in self.__vocab:
@@ -54,25 +57,22 @@ class MST_Parser:
         return self.bigram_word_index_dict[word1]*len(self.__vocab) + self.bigram_word_index_dict[word2]
 
     def __feature_function_word_bigram(self, word1, word2):
-        arr = np.zeros(len(self.__vocab) ** 2)
         first_word = word1["word"] if word1["word"] is not None else "ROOT"
         second_word = word2["word"] if word2["word"] is not None else "ROOT"
-        arr[self.find_pair_index(first_word, second_word)] = 1
-        return arr
+        return self.find_pair_index(first_word, second_word)
 
     def __feature_function_POS_bigram(self, word1, word2):
-        arr = np.zeros(len(self.__POS) ** 2)
-        arr[self.__POS_dict[word1["tag"]][word2["tag"]]] = 1
-        return arr
+        return self.__POS_dict[word1["ctag"]][word2["ctag"]] + len(self.__vocab)
 
     def __feature_function(self, word1, word2):
-        return np.concatenate((self.__feature_function_word_bigram(word1, word2), self.__feature_function_POS_bigram(word1, word2)), axis=0)
+        return self.Ferature_repr(self.__feature_function_word_bigram(word1, word2), self.__feature_function_POS_bigram(word1, word2))
 
     def __score_two_words(self, v1, v2):
-        # index_words = self.__bigram_dict[v1[0]][v2[0]]
         index_words = self.find_pair_index(v1[0], v2[0])
         index_POS = self.__POS_dict[v1[1]][v2[1]]
-        return self.__weights[index_words] + self.__weights[index_POS]
+        bigram_weight = self.__weights[index_words] if index_words in self.__weights.keys() else 0
+        pos_weight = self.__weights[index_POS] if index_POS in self.__weights.keys() else 0
+        return bigram_weight + pos_weight
 
     def __create_arc(self, v1, v2, v1_ind, v2_ind):
         return self.ARC(v1_ind, v2_ind, -self.__score_two_words(v1, v2))
@@ -84,49 +84,79 @@ class MST_Parser:
         maximum_spanning_tree = [self.ARC(arc.head, arc.tail, -arc.weight) for arc in maximum_spanning_tree]
         return maximum_spanning_tree
 
-    def __create_gold_standard_tuple(self, sent):
+    def __get_gold_standard_tree(self, sent):
         words = list(sent.nodes.values())
-        list1 = [self.__create_arc((sent.nodes[word["head"]]["word"] if sent.nodes[word["head"]]["word"] is not None else "ROOT", sent.nodes[word["head"]]["tag"]), (word["word"], word["tag"]), word["head"], word["address"]) for word in words if word["head"] is not None]
+        list1 = [self.__create_arc((sent.nodes[word["head"]]["word"] if sent.nodes[word["head"]]["word"] is not None else "ROOT", sent.nodes[word["head"]]["ctag"]), (word["word"], word["ctag"]), word["head"], word["address"]) for word in words if word["head"] is not None]
         return list1
 
     def __sum_of_edges(self, tree, sentence):
-        res = np.zeros(self.__dimension_size)
+        res = dict()
         for arc in tree:
-            res += self.__feature_function(sentence.nodes[arc.head], sentence.nodes[arc.tail])
+            feature = self.__feature_function(sentence.nodes[arc.head], sentence.nodes[arc.tail])
+            if feature.bigram_ind not in res.keys():
+                res[feature.bigram_ind] = 0
+            if feature.POS_ind not in res.keys():
+                res[feature.POS_ind] = 0
+            res[feature.bigram_ind] += 1
+            res[feature.POS_ind] += 1
         return res
 
     def __update_weights(self, cur_weight, gold_standard_tree, cur_tree, sentence):
-        return cur_weight + self.__learning_rate * \
-               (self.__sum_of_edges(gold_standard_tree, sentence) -
-                         self.__sum_of_edges(cur_tree, sentence))
+        gold_minus_cur = self.__minus_weights(self.__sum_of_edges(gold_standard_tree, sentence),
+                                              self.__sum_of_edges(cur_tree, sentence))
+        leraning_rate_mult_gold_minus_cur = self.__mult_scalar_weight(self.__learning_rate, gold_minus_cur)
+        return self.__plus_weights(cur_weight, leraning_rate_mult_gold_minus_cur)
+
+    def __weights_binary_operation(self, weight1, weight2, operation):
+        new_weight = dict(weight1)
+        for ind in weight2:
+            if ind not in new_weight.keys():
+                new_weight[ind] = 0
+            new_weight[ind] = operation(new_weight[ind], weight2[ind])
+        return new_weight
+
+    def __minus_weights(self, weight1, weight2):
+        return self.__weights_binary_operation(weight1, weight2, lambda x, y: x - y)
+
+    def __plus_weights(self, weight1, weight2):
+        return self.__weights_binary_operation(weight1, weight2, lambda x, y: x + y)
+
+    def __mult_scalar_weight(self, scalar, weight):
+        new_weight = dict(weight)
+        new_weight.update((x, scalar * y) for x, y in new_weight.items())
+        return new_weight
+
 
     def train(self, n_iterations: int, batch_size: int, training_set):
-        weights = np.zeros(self.__dimension_size)
-        start = 0
+        print('started training')
+        self.__weights = dict()
+        start = random.randint(0, len(training_set) - batch_size)
         for r in range(n_iterations):
-            for sent in training_set[start: start + batch_size]:
+            for i, sent in enumerate(training_set[start: start + batch_size]):
+                print((r, i))  # So we know in which iteration we are
                 tagged_sent = self.__create_tagged_sent(sent)
                 maximum_spanning_tree = self.__inference(tagged_sent)
-                actual_spanning_tree = self.__create_gold_standard_tuple(sent)
-                updated_weight = self.__update_weights(weights, actual_spanning_tree, maximum_spanning_tree, sent)
-                self.__weights += updated_weight
-                weights = updated_weight
-                start += batch_size
-        self.__weights / (n_iterations * batch_size)
+                actual_spanning_tree = self.__get_gold_standard_tree(sent)
+                cur_iter_weight = self.__update_weights(self.__weights, actual_spanning_tree, maximum_spanning_tree, sent)
+                self.__weights = self.__plus_weights(self.__weights, cur_iter_weight)
+            start = random.randint(0, len(training_set) - batch_size)
+        avarage_divide = n_iterations * batch_size
+        self.__weights.update((x, y / avarage_divide) for x, y in self.__weights.items())
 
     def predict(self, sent):
         return self.__inference(sent)
 
     def __create_tagged_sent(self, sent):
-        return [(word["word"] if word["word"] is not None else "ROOT", word["tag"]) for word in sent.nodes.values()]
+        return [(word["word"] if word["word"] is not None else "ROOT", word["ctag"]) for word in sent.nodes.values()]
 
 
     def eval(self, sent):
         tagged_sent = self.__create_tagged_sent(sent)
         maximum_spanning_tree = self.__inference(tagged_sent)
-        actual_spanning_tree = self.__create_gold_standard_tuple(sent)
-        max_set = set(maximum_spanning_tree)
-        intersection = max_set.intersection(set(actual_spanning_tree))
+        maximum_spanning_tree_tuples = {(arc.head, arc.tail) for arc in maximum_spanning_tree }
+        actual_spanning_tree = self.__get_gold_standard_tree(sent)
+        actual_spanning_tree_tuples = {(arc.head, arc.tail) for arc in actual_spanning_tree }
+        intersection = maximum_spanning_tree_tuples.intersection(actual_spanning_tree_tuples)
         return len(intersection) / len(tagged_sent)
 
     def test(self,test_set):
