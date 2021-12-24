@@ -1,7 +1,6 @@
 import random
 
 import numpy as np
-from copy import deepcopy
 from collections import namedtuple
 from nltk.corpus import dependency_treebank
 from Chu_Liu_Edmonds_algorithm import min_spanning_arborescence_nx
@@ -69,7 +68,6 @@ class MST_Parser:
         return self.Ferature_repr(self.__feature_function_word_bigram(word1, word2), self.__feature_function_POS_bigram(word1, word2))
 
     def __score_two_words(self, v1, v2):
-        # index_words = self.__bigram_dict[v1[0]][v2[0]]
         index_words = self.find_pair_index(v1[0], v2[0])
         index_POS = self.__POS_dict[v1[1]][v2[1]]
         bigram_weight = self.__weights[index_words] if index_words in self.__weights.keys() else 0
@@ -86,7 +84,7 @@ class MST_Parser:
         maximum_spanning_tree = [self.ARC(arc.head, arc.tail, -arc.weight) for arc in maximum_spanning_tree]
         return maximum_spanning_tree
 
-    def __create_gold_standard_tuple(self, sent):
+    def __get_gold_standard_tree(self, sent):
         words = list(sent.nodes.values())
         list1 = [self.__create_arc((sent.nodes[word["head"]]["word"] if sent.nodes[word["head"]]["word"] is not None else "ROOT", sent.nodes[word["head"]]["tag"]), (word["word"], word["tag"]), word["head"], word["address"]) for word in words if word["head"] is not None]
         return list1
@@ -108,28 +106,23 @@ class MST_Parser:
                                               self.__sum_of_edges(cur_tree, sentence))
         leraning_rate_mult_gold_minus_cur = self.__mult_scalar_weight(self.__learning_rate, gold_minus_cur)
         return self.__plus_weights(cur_weight, leraning_rate_mult_gold_minus_cur)
-        # return cur_weight + self.__learning_rate * \
-        #        (self.__sum_of_edges(gold_standard_tree, sentence) -
-        #                  self.__sum_of_edges(cur_tree, sentence))
+
+    def __weights_binary_operation(self, weight1, weight2, operation):
+        new_weight = dict(weight1)
+        for ind in weight2:
+            if ind not in new_weight.keys():
+                new_weight[ind] = 0
+            new_weight[ind] = operation(new_weight[ind], weight2[ind])
+        return new_weight
 
     def __minus_weights(self, weight1, weight2):
-        new_weight = deepcopy(weight1)
-        for ind in weight2:
-            if ind not in new_weight.keys():
-                new_weight[ind] = 0
-            new_weight[ind] -= weight2[ind]
-        return new_weight
+        return self.__weights_binary_operation(weight1, weight2, lambda x, y: x - y)
 
     def __plus_weights(self, weight1, weight2):
-        new_weight = deepcopy(weight1)
-        for ind in weight2:
-            if ind not in new_weight.keys():
-                new_weight[ind] = 0
-            new_weight[ind] += weight2[ind]
-        return new_weight
+        return self.__weights_binary_operation(weight1, weight2, lambda x, y: x + y)
 
     def __mult_scalar_weight(self, scalar, weight):
-        new_weight = deepcopy(weight)
+        new_weight = dict(weight)
         new_weight.update((x, scalar * y) for x, y in new_weight.items())
         return new_weight
 
@@ -139,18 +132,16 @@ class MST_Parser:
         self.__weights = dict()
         start = random.randint(0, len(training_set) - batch_size)
         for r in range(n_iterations):
-            print(f"r = {r}")
             for i, sent in enumerate(training_set[start: start + batch_size]):
-                print(f"i = {i}")
+                print((r, i))  # So we know in which iteration we are
                 tagged_sent = self.__create_tagged_sent(sent)
                 maximum_spanning_tree = self.__inference(tagged_sent)
-                actual_spanning_tree = self.__create_gold_standard_tuple(sent)
+                actual_spanning_tree = self.__get_gold_standard_tree(sent)
                 cur_iter_weight = self.__update_weights(self.__weights, actual_spanning_tree, maximum_spanning_tree, sent)
                 self.__weights = self.__plus_weights(self.__weights, cur_iter_weight)
-                start = random.randint(0, len(training_set) - batch_size)
+            start = random.randint(0, len(training_set) - batch_size)
         avarage_divide = n_iterations * batch_size
         self.__weights.update((x, y / avarage_divide) for x, y in self.__weights.items())
-        # self.__weights /= (n_iterations * batch_size)
 
     def predict(self, sent):
         return self.__inference(sent)
@@ -162,9 +153,10 @@ class MST_Parser:
     def eval(self, sent):
         tagged_sent = self.__create_tagged_sent(sent)
         maximum_spanning_tree = self.__inference(tagged_sent)
-        actual_spanning_tree = self.__create_gold_standard_tuple(sent)
-        max_set = set(maximum_spanning_tree)
-        intersection = max_set.intersection(set(actual_spanning_tree))
+        maximum_spanning_tree_tuples = {(arc.head, arc.tail) for arc in maximum_spanning_tree }
+        actual_spanning_tree = self.__get_gold_standard_tree(sent)
+        actual_spanning_tree_tuples = {(arc.head, arc.tail) for arc in actual_spanning_tree }
+        intersection = maximum_spanning_tree_tuples.intersection(actual_spanning_tree_tuples)
         return len(intersection) / len(tagged_sent)
 
     def test(self,test_set):
@@ -179,6 +171,6 @@ if __name__ == '__main__':
     break_off = int(0.9*len(dependency_treebank.parsed_sents()))
     train_set = dependency_treebank.parsed_sents()[:break_off]
     test_set = dependency_treebank.parsed_sents()[break_off:]
-    parser.train(2, 2, train_set)
+    parser.train(2, 64, train_set)
     print(parser.test(test_set))
 
