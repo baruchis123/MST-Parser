@@ -165,19 +165,17 @@ class MST_Parser:
         tagged_sent = self.__create_tagged_sent(sent)
         maximum_spanning_tree = self.__inference(tagged_sent)
         maximum_spanning_tree_tuples = {(arc.head, arc.tail) for arc in maximum_spanning_tree }
-        actual_spanning_tree = self.__get_gold_standard_tree(sent)
-        actual_spanning_tree_tuples = {(arc.head, arc.tail) for arc in actual_spanning_tree }
-        intersection = maximum_spanning_tree_tuples.intersection(actual_spanning_tree_tuples)
+        gold_standard_tree = self.__get_gold_standard_tree(sent)
+        gold_standard_tree_tuples = {(arc.head, arc.tail) for arc in gold_standard_tree }
+        intersection = maximum_spanning_tree_tuples.intersection(gold_standard_tree_tuples)
         return len(intersection) / (len(tagged_sent) - 1)
 
     def test(self,test_set):
         test_set_size = len(test_set)
         res = 0
-        count = 0
         for sent in test_set:
             res += self.eval(sent)
-            count += 1
-        return res/count
+        return res/test_set_size
 
 if __name__ == '__main__':
     parser = MST_Parser(1)
