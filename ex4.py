@@ -86,15 +86,24 @@ class MST_Parser:
         words = [sent.nodes[i] for i in range(len(sent.nodes))]
         arcs = []
         for node in words:
-            if node["word"] is None:
-                continue
-            ind = node["address"]
-            word = node["word"]
-            word_tag = node["tag"]
-            head_ind = node["head"]
-            head = sent.nodes[head_ind]["word"] if sent.nodes[head_ind]["word"] is not None else "ROOT"
-            head_tag = sent.nodes[head_ind]["tag"]
-            arcs.append(self.__create_arc((head, head_tag), (word, word_tag), head_ind, ind))
+            head = node["word"] if node["word"] is not None else "ROOT"
+            head_tag = node["tag"]
+            head_ind = node["address"]
+            deps = list(node["deps"].values())
+            if len(deps) > 0:
+                for dep in deps[0]:
+                    ind = dep
+                    word = sent.nodes[ind]["word"]
+                    word_tag = sent.nodes[ind]["tag"]
+            # if node["word"] is None:
+            #     continue
+            # ind = node["address"]
+            # word = node["word"]
+            # word_tag = node["tag"]
+            # head_ind = node["head"]
+            # head = sent.nodes[head_ind]["word"] if sent.nodes[head_ind]["word"] is not None else "ROOT"
+            # head_tag = sent.nodes[head_ind]["tag"]
+                    arcs.append(self.__create_arc((head, head_tag), (word, word_tag), head_ind, ind))
         # arcs = [self.__create_arc((sent.nodes[word["head"]]["word"] if sent.nodes[word["head"]]["word"] is not None else "ROOT", sent.nodes[word["head"]]["tag"]), (word["word"], word["tag"]), word["head"], word["address"]) for word in words if word["head"] is not None]
         return arcs
 
@@ -108,6 +117,21 @@ class MST_Parser:
                 res[feature.POS_ind] = 0
             res[feature.bigram_ind] += 1
             res[feature.POS_ind] += 1
+        return res
+
+    def cal_sum_of_feature(self, sent):
+        res = dict()
+        for node in sent.nodes.values():
+            deps = list(node['deps'].values())
+            if len(deps) != 0:
+                for dep in deps[0]:
+                    ff = self.__feature_function(node, sent.nodes[dep])
+                    if ff.bigram_ind not in res.keys():
+                        res[ff.bigram_ind] = 0
+                    if ff.POS_ind not in res.keys():
+                        res[ff.POS_ind] = 0
+                    res[ff.bigram_ind] += 1
+                    res[ff.POS_ind] += 1
         return res
 
     def __update_weights(self, cur_weight, gold_standard_tree, cur_tree, sentence):
@@ -138,19 +162,22 @@ class MST_Parser:
 
     def train(self, n_iterations: int, batch_size: int, training_set):
         print('started training')
-        self.__weights = dict()
         cur_iter_weight = dict()
+        sum_weights = dict()
         start = random.randint(0, len(training_set) - batch_size)
+        training_set_array = np.array(training_set)
         for r in range(n_iterations):
-            for i, sent in enumerate(training_set[start: start + batch_size]):
+            np.random.shuffle(training_set_array)
+            for i, sent in enumerate(training_set_array[start: start + batch_size]):
                 print((r, i))  # So we know in which iteration we are
                 tagged_sent = self.__create_tagged_sent(sent)
                 maximum_spanning_tree = self.__inference(tagged_sent)
                 gold_standard_tree = self.__get_gold_standard_tree(sent)
-                cur_iter_weight = self.__update_weights(cur_iter_weight, gold_standard_tree, maximum_spanning_tree, sent)
-                self.__weights = self.__plus_weights(self.__weights, cur_iter_weight)
+                self.__weights = self.__update_weights(self.__weights, gold_standard_tree, maximum_spanning_tree, sent)
+                sum_weights = self.__plus_weights(sum_weights, self.__weights)
             start = random.randint(0, len(training_set) - batch_size)
         avarage_divide = n_iterations * batch_size
+        self.__weights = dict(sum_weights)
         self.__weights.update((x, y / avarage_divide) for x, y in self.__weights.items())
 
     def predict(self, sent):
@@ -162,13 +189,20 @@ class MST_Parser:
 
 
     def eval(self, sent):
+        count = 0
         tagged_sent = self.__create_tagged_sent(sent)
         maximum_spanning_tree = self.__inference(tagged_sent)
         maximum_spanning_tree_tuples = {(arc.head, arc.tail) for arc in maximum_spanning_tree }
         gold_standard_tree = self.__get_gold_standard_tree(sent)
         gold_standard_tree_tuples = {(arc.head, arc.tail) for arc in gold_standard_tree }
         intersection = maximum_spanning_tree_tuples.intersection(gold_standard_tree_tuples)
-        return len(intersection) / (len(tagged_sent) - 1)
+        # for arc in maximum_spanning_tree:
+        #     w1 = sent.nodes[arc.head]
+        #     w2 = sent.nodes[arc.tail]
+        #     deps = list(w1['deps'].values())
+        #     if len(deps) != 0 and w2['address'] in deps[0]:
+        #         count += 1
+        return len(intersection) / len(gold_standard_tree_tuples)
 
     def test(self,test_set):
         test_set_size = len(test_set)
